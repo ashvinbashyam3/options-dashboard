@@ -131,7 +131,7 @@ export async function GET(request: NextRequest) {
   }
 
   const today = new Date().toISOString().slice(0, 10);
-  const expirationCandidates = rows.flatMap((row) => {
+  const expirationCandidates: string[] = rows.flatMap((row) => {
     const expiration = row.details?.expiration_date;
     return typeof expiration === "string" ? [expiration] : [];
   });
