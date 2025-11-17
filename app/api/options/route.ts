@@ -131,12 +131,12 @@ export async function GET(request: NextRequest) {
   }
 
   const today = new Date().toISOString().slice(0, 10);
-  const expirationCandidates = rows
-    .map((row) => row.details?.expiration_date)
-    .filter((date): date is string => typeof date === "string");
-
   const validExpirations = Array.from(
-    new Set(expirationCandidates.filter((date) => date >= today))
+    new Set(
+      rows
+        .map((row) => row.details?.expiration_date)
+        .filter((date): date is string => Boolean(date) && date >= today)
+    )
   )
     .sort()
     .slice(0, 10);
