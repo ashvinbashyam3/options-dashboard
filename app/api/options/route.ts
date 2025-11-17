@@ -58,30 +58,32 @@ type MassiveOptionsResponse = {
 };
 
 // --- NEW: Massive API Quote Response Type ---
-type MassiveQuoteResponse = {
-  status?: string;
-  ticker?: {
-    day: {
-      c?: number; // close
-      h?: number; // high
-      l?: number; // low
-      o?: number; // open
-      v?: number; // volume
-    };
-    lastTrade: {
-      p?: number; // price
-    };
-    prevDay: {
-      c?: number; // close
-      h?: number; // high
-      l?: number; // low
-      o?: number // open
-    }
+type MassiveQuote = {
+  day: {
+    c?: number; // close
+    h?: number; // high
+    l?: number; // low
+    o?: number; // open
+    v?: number; // volume
+  };
+  lastTrade: {
+    p?: number; // price
+  };
+  prevDay: {
+    c?: number; // close
+    h?: number; // high
+    l?: number; // low
+    o?: number // open
   }
 };
 
+type MassiveQuoteResponse = {
+  results?: MassiveQuote[];
+  status?: string;
+};
+
 const MAX_PAGES = 15;
-const MASSIVE_BASE_URL = "https://api.massive.com/v3/snapshot";
+const MASSIVE_BASE_URL = "https://api.massive.com/v3";
 
 const parseNumber = (value: unknown): number | null => {
   if (value === null || value === undefined) {
@@ -115,22 +117,21 @@ const ensureApiKey = (url: URL, apiKey: string) => {
  * It prioritizes the last trade price, then the daily close, and finally
  * falls back to the previous day's close. This provides a robust value
  * whether the market is open or closed.
- * @param quote The quote response from the Massive API.
+ * @param quote The quote object from the Massive API response.
  * @returns A numeric spot price or null if none could be determined.
  */
-const getUnderlyingSpotFromQuote = (quote: MassiveQuoteResponse): number | null => {
-  const quoteTicker = quote?.ticker;
-  if (!quoteTicker) {
+const getUnderlyingSpotFromQuote = (quote: MassiveQuote): number | null => {
+  if (!quote) {
     return null;
   }
 
   const candidates = [
     // 1. Most recent trade price (best for live market)
-    quoteTicker.lastTrade?.p,
+    quote.lastTrade?.p,
     // 2. Today's closing price
-    quoteTicker.day?.c,
+    quote.day?.c,
     // 3. Previous day's closing price (fallback for after-hours/pre-market)
-    quoteTicker.prevDay?.c,
+    quote.prevDay?.c,
   ];
 
   for (const candidate of candidates) {
@@ -144,23 +145,36 @@ const getUnderlyingSpotFromQuote = (quote: MassiveQuoteResponse): number | null 
 };
 
 async function fetchUnderlyingQuote(ticker: string, apiKey: string): Promise<number | null> {
-  const url = new URL(`${MASSIVE_BASE_URL}/stocks/${encodeURIComponent(ticker)}`);
+  // CORRECTED ENDPOINT: Use the unified snapshot endpoint with a ticker query parameter.
+  const url = new URL(`${MASSIVE_BASE_URL}/snapshot`);
+  url.searchParams.set("tickers", ticker);
   ensureApiKey(url, apiKey);
 
-  const response = await fetch(url.toString(), {
+  const urlString = url.toString();
+  console.log(`[api/options] Fetching underlying quote from: ${urlString}`);
+
+  const response = await fetch(urlString, {
     headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
     cache: "no-store",
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error(`[api/options] Failed to fetch underlying quote for ${ticker}: ${response.status} ${errorText}`);
-    // We can choose to throw or return null. Returning null lets the main function decide how to fail.
+    // Enhanced logging for Vercel debugging
+    console.error(
+      `[api/options] Failed to fetch underlying quote for ${ticker}. URL: ${urlString}, Status: ${response.status}, Response: ${errorText}`
+    );
     return null;
   }
 
   const json = (await response.json()) as MassiveQuoteResponse;
-  return getUnderlyingSpotFromQuote(json);
+  // The unified snapshot returns a `results` array, even for one ticker.
+  const quoteResult = json.results?.[0];
+  if (!quoteResult) {
+    console.error(`[api/options] Underlying quote response for ${ticker} was empty or invalid.`);
+    return null;
+  }
+  return getUnderlyingSpotFromQuote(quoteResult);
 }
 
 export async function GET(request: NextRequest) {
