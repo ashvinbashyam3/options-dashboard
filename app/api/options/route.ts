@@ -147,7 +147,7 @@ const getUnderlyingSpotFromQuote = (quote: MassiveQuote): number | null => {
 async function fetchUnderlyingQuote(ticker: string, apiKey: string): Promise<number | null> {
   // CORRECTED ENDPOINT: Use the unified snapshot endpoint with a ticker query parameter.
   const url = new URL(`${MASSIVE_BASE_URL}/snapshot`);
-  url.searchParams.set("tickers", ticker);
+  url.searchParams.set("ticker", ticker);
   ensureApiKey(url, apiKey);
 
   const urlString = url.toString();
