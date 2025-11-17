@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bar,
   CartesianGrid,
@@ -7,14 +8,12 @@ import {
   Legend,
   Line,
   ReferenceLine,
-  ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis
 } from "recharts";
-import { useMemo } from "react";
-import type { OptionPoint } from "@/types/options";
 import type { TooltipProps } from "recharts";
+import type { OptionPoint } from "@/types/options";
 
 const currency = (value: number | null | undefined) => {
   if (value === null || value === undefined || Number.isNaN(value)) {
@@ -66,6 +65,51 @@ export default function ExpiryChart({
   expiration: string;
 }) {
   const sorted = useMemo(() => [...data].sort((a, b) => a.strike - b.strike), [data]);
+  const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const minStrike = sorted.at(0)?.strike;
+    const maxStrike = sorted.at(-1)?.strike;
+    console.log(
+      `[ExpiryChart] ${expiration} rendering ${sorted.length} points (strike range: ${minStrike} – ${maxStrike})`
+    );
+  }, [expiration, sorted]);
+
+  useEffect(() => {
+    if (size.width > 0) {
+      console.log(
+        `[ExpiryChart] ${expiration} container measured at ${size.width.toFixed(0)}×${Math.max(size.height, 320).toFixed(0)}px`
+      );
+    }
+  }, [expiration, size.height, size.width]);
+
+  useEffect(() => {
+    if (!containerEl) {
+      return;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) {
+        return;
+      }
+      const { width, height } = entry.contentRect;
+      setSize({ width, height });
+    });
+
+    observer.observe(containerEl);
+    const { width, height } = containerEl.getBoundingClientRect();
+    setSize({ width, height });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [containerEl]);
+
+  const containerRef = useCallback((node: HTMLDivElement | null) => {
+    setContainerEl(node);
+  }, []);
 
   return (
     <div
@@ -89,16 +133,21 @@ export default function ExpiryChart({
         }}
       >
         <span>Expiry: {expiration}</span>
-        {underlyingPrice !== null && (
-          <span>Spot: {currency(underlyingPrice)}</span>
-        )}
+        {underlyingPrice !== null && <span>Spot: {currency(underlyingPrice)}</span>}
       </div>
       {sorted.length === 0 ? (
         <div style={{ color: "#7e8ca5", fontSize: 14 }}>No options available.</div>
       ) : (
-        <div style={{ width: "100%", height: 320 }}>
-          <ResponsiveContainer>
-            <ComposedChart data={sorted} margin={{ left: 0, right: 20, top: 10, bottom: 10 }}>
+        <div ref={containerRef} style={{ width: "100%", height: 360, minHeight: 320 }}>
+          {size.width <= 0 ? (
+            <div style={{ color: "#7e8ca5", fontSize: 14 }}>Measuring chart area...</div>
+          ) : (
+            <ComposedChart
+              width={size.width}
+              height={Math.max(size.height, 320)}
+              data={sorted}
+              margin={{ left: 0, right: 20, top: 10, bottom: 10 }}
+            >
               <CartesianGrid stroke="#1f2b3a" strokeDasharray="3 3" />
               <XAxis
                 dataKey="strike"
@@ -167,6 +216,8 @@ export default function ExpiryChart({
               {typeof underlyingPrice === "number" && Number.isFinite(underlyingPrice) && (
                 <ReferenceLine
                   x={underlyingPrice}
+                  xAxisId={0}
+                  yAxisId="left"
                   stroke="#ffffff"
                   strokeDasharray="4 4"
                   label={{
@@ -178,7 +229,7 @@ export default function ExpiryChart({
                 />
               )}
             </ComposedChart>
-          </ResponsiveContainer>
+          )}
         </div>
       )}
       <p style={{ color: "#7e8ca5", fontSize: 12, margin: 0 }}>

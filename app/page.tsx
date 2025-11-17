@@ -26,16 +26,29 @@ export default function HomePage() {
       setState((prev) => ({ ...prev, error: "Please enter a ticker." }));
       return;
     }
+    console.log("[OptionsUI] Fetching chain for", normalized);
     setState({ data: null, loading: true, error: null });
     try {
       const response = await fetch(`/api/options?ticker=${encodeURIComponent(normalized)}`);
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
-        throw new Error(payload?.message || "Failed to load options.");
+        const messageParts = [payload?.message || "Failed to load options."];
+        if (payload?.statusCode) {
+          messageParts.push(`(HTTP ${payload.statusCode})`);
+        }
+        if (payload?.details) {
+          messageParts.push(String(payload.details));
+        }
+        console.error("[OptionsUI] API error", messageParts.join(" "));
+        throw new Error(messageParts.join(" "));
       }
       const payload = (await response.json()) as OptionsApiResponse;
+      console.log(
+        `[OptionsUI] Loaded ${payload.options.length} options across ${payload.expirations.length} expirations`
+      );
       setState({ data: payload, loading: false, error: null });
     } catch (err) {
+      console.error("[OptionsUI] Failed to load chain", err);
       setState({ data: null, loading: false, error: err instanceof Error ? err.message : "Unknown error" });
     }
   }, []);
