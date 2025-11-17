@@ -191,7 +191,7 @@ export async function GET(request: NextRequest) {
   console.log(`[api/options] Fetched underlying spot price: ${underlyingSpot}`);
 
   // --- Step 2: Fetch the options chain ---
-  let nextUrl: URL | null = new URL(`${MASSIVE_BASE_URL}/options/${encodeURIComponent(ticker)}`);
+  let nextUrl: URL | null = new URL(`${MASSIVE_BASE_URL}/snapshot/options/${encodeURIComponent(ticker)}`);
   nextUrl.searchParams.set("limit", "250");
   nextUrl.searchParams.set("contract_type", "call");
   ensureApiKey(nextUrl, apiKey);
