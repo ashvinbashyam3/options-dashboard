@@ -135,12 +135,7 @@ export async function GET(request: NextRequest) {
     new Set(
       rows
         .map((row) => row.details?.expiration_date)
-        .filter((date): date is string => {
-          if (typeof date !== "string") {
-            return false;
-          }
-          return date >= today;
-        })
+        .filter((date): date is string => Boolean(date) && date >= today)
     )
   )
     .sort()
