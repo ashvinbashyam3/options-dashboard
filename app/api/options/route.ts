@@ -57,24 +57,13 @@ type MassiveOptionsResponse = {
   next_url?: string | null;
 };
 
-// --- NEW: Massive API Quote Response Type ---
+// --- NEW: Massive API Quote Response Type (Corrected) ---
 type MassiveQuote = {
-  day: {
-    c?: number; // close
-    h?: number; // high
-    l?: number; // low
-    o?: number; // open
-    v?: number; // volume
+  session?: {
+    price?: number;
+    close?: number;
+    previous_close?: number;
   };
-  lastTrade: {
-    p?: number; // price
-  };
-  prevDay: {
-    c?: number; // close
-    h?: number; // high
-    l?: number; // low
-    o?: number // open
-  }
 };
 
 type MassiveQuoteResponse = {
@@ -114,24 +103,23 @@ const ensureApiKey = (url: URL, apiKey: string) => {
 
 /**
  * Extracts a reliable spot price from a Massive.com quote response.
- * It prioritizes the last trade price, then the daily close, and finally
- * falls back to the previous day's close. This provides a robust value
- * whether the market is open or closed.
+ * It prioritizes the last known price from the session, then the session's
+ * close, and finally falls back to the previous day's close.
  * @param quote The quote object from the Massive API response.
  * @returns A numeric spot price or null if none could be determined.
  */
 const getUnderlyingSpotFromQuote = (quote: MassiveQuote): number | null => {
-  if (!quote) {
+  if (!quote?.session) {
     return null;
   }
 
   const candidates = [
-    // 1. Most recent trade price (best for live market)
-    quote.lastTrade?.p,
+    // 1. Most recent price for the session
+    quote.session.price,
     // 2. Today's closing price
-    quote.day?.c,
-    // 3. Previous day's closing price (fallback for after-hours/pre-market)
-    quote.prevDay?.c,
+    quote.session.close,
+    // 3. Previous day's closing price (fallback)
+    quote.session.previous_close,
   ];
 
   for (const candidate of candidates) {
@@ -145,7 +133,6 @@ const getUnderlyingSpotFromQuote = (quote: MassiveQuote): number | null => {
 };
 
 async function fetchUnderlyingQuote(ticker: string, apiKey: string): Promise<number | null> {
-  // CORRECTED ENDPOINT: Use the unified snapshot endpoint with a ticker query parameter.
   const url = new URL(`${MASSIVE_BASE_URL}/snapshot`);
   url.searchParams.set("ticker", ticker);
   ensureApiKey(url, apiKey);
@@ -160,7 +147,6 @@ async function fetchUnderlyingQuote(ticker: string, apiKey: string): Promise<num
 
   if (!response.ok) {
     const errorText = await response.text();
-    // Enhanced logging for Vercel debugging
     console.error(
       `[api/options] Failed to fetch underlying quote for ${ticker}. URL: ${urlString}, Status: ${response.status}, Response: ${errorText}`
     );
@@ -168,7 +154,6 @@ async function fetchUnderlyingQuote(ticker: string, apiKey: string): Promise<num
   }
 
   const json = (await response.json()) as MassiveQuoteResponse;
-  // The unified snapshot returns a `results` array, even for one ticker.
   const quoteResult = json.results?.[0];
   if (!quoteResult) {
     console.error(`[api/options] Underlying quote response for ${ticker} was empty or invalid.`);
