@@ -57,11 +57,11 @@ function CustomTooltip({ active, payload }: TooltipProps<number, string>) {
 
 export default function ExpiryChart({
   data,
-  underlyingPrice,
+  underlyingSpot,
   expiration
 }: {
   data: OptionPoint[];
-  underlyingPrice: number | null;
+  underlyingSpot: number | null;
   expiration: string;
 }) {
   const sorted = useMemo(() => [...data].sort((a, b) => a.strike - b.strike), [data]);
@@ -133,7 +133,7 @@ export default function ExpiryChart({
         }}
       >
         <span>Expiry: {expiration}</span>
-        {underlyingPrice !== null && <span>Spot: {currency(underlyingPrice)}</span>}
+        {underlyingSpot !== null && <span>Spot: {currency(underlyingSpot)}</span>}
       </div>
       {sorted.length === 0 ? (
         <div style={{ color: "#7e8ca5", fontSize: 14 }}>No options available.</div>
@@ -213,15 +213,15 @@ export default function ExpiryChart({
                 dot={false}
                 activeDot={{ r: 5 }}
               />
-              {typeof underlyingPrice === "number" && Number.isFinite(underlyingPrice) && (
+              {typeof underlyingSpot === "number" && Number.isFinite(underlyingSpot) && (
                 <ReferenceLine
-                  x={underlyingPrice}
+                  x={underlyingSpot}
                   xAxisId={0}
                   yAxisId="left"
                   stroke="#ffffff"
                   strokeDasharray="4 4"
                   label={{
-                    value: `Spot ${currency(underlyingPrice)}`,
+                    value: `Spot ${currency(underlyingSpot)}`,
                     fill: "#ffffff",
                     position: "top",
                     angle: 0

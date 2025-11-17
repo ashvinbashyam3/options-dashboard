@@ -11,7 +11,7 @@ export type OptionPoint = {
 };
 
 export type OptionsApiResponse = {
-  underlyingPrice: number | null;
+  underlyingSpot: number;
   expirations: string[];
   options: OptionPoint[];
 };

@@ -146,7 +146,7 @@ export default function HomePage() {
           <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ color: "#c5cee3", fontSize: 14 }}>
               Symbol: <strong>{tickerInput.trim().toUpperCase()}</strong> · Spot: {" "}
-              {data.underlyingPrice !== null ? `$${data.underlyingPrice.toFixed(2)}` : "Unavailable"}
+              {data.underlyingSpot !== null ? `$${data.underlyingSpot.toFixed(2)}` : "Unavailable"}
               . Snapshot courtesy of Massive.
             </div>
           </section>
@@ -169,7 +169,7 @@ export default function HomePage() {
                 key={expiration}
                 expiration={expiration}
                 data={points}
-                underlyingPrice={data.underlyingPrice}
+                underlyingSpot={data.underlyingSpot}
               />
             ))}
         </section>

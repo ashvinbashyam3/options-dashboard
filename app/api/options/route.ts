@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { OptionPoint, OptionsApiResponse } from "@/types/options";
 
+// --- Massive API Response Types (unchanged) ---
 type BaseNumericSnapshot = {
   price?: number | string;
   last_price?: number | string;
@@ -51,14 +52,36 @@ type MassiveOptionRow = {
   day?: MassiveDaySnapshot;
 };
 
-type MassiveResponse = {
+type MassiveOptionsResponse = {
   results?: MassiveOptionRow[];
   next_url?: string | null;
-  underlying_asset?: MassiveUnderlyingSnapshot | null;
+};
+
+// --- NEW: Massive API Quote Response Type ---
+type MassiveQuoteResponse = {
+  status?: string;
+  ticker?: {
+    day: {
+      c?: number; // close
+      h?: number; // high
+      l?: number; // low
+      o?: number; // open
+      v?: number; // volume
+    };
+    lastTrade: {
+      p?: number; // price
+    };
+    prevDay: {
+      c?: number; // close
+      h?: number; // high
+      l?: number; // low
+      o?: number // open
+    }
+  }
 };
 
 const MAX_PAGES = 15;
-const MASSIVE_BASE = "https://api.massive.com/v3/snapshot/options/";
+const MASSIVE_BASE_URL = "https://api.massive.com/v3/snapshot";
 
 const parseNumber = (value: unknown): number | null => {
   if (value === null || value === undefined) {
@@ -69,61 +92,6 @@ const parseNumber = (value: unknown): number | null => {
     return null;
   }
   return num;
-};
-
-const pickUnderlyingPrice = (
-  snapshot?: MassiveUnderlyingSnapshot | MassiveDaySnapshot | null
-): number | null => {
-  if (!snapshot) {
-    return null;
-  }
-
-  const candidates: Array<unknown> = [
-    snapshot.price,
-    snapshot.last_price,
-    snapshot.close,
-    snapshot.day_close,
-  ];
-
-  if ("c" in snapshot) {
-    candidates.push(snapshot.c);
-  }
-  if ("last" in snapshot) {
-    candidates.push(snapshot.last);
-  }
-
-  if ("last_trade" in snapshot) {
-    candidates.push(snapshot.last_trade?.price, snapshot.last_trade?.p);
-  }
-  if ("day" in snapshot) {
-    candidates.push(snapshot.day?.close, snapshot.day?.c);
-  }
-  if ("last_quote" in snapshot) {
-    candidates.push(
-      snapshot.last_quote?.bid,
-      snapshot.last_quote?.bid_price,
-      snapshot.last_quote?.ask,
-      snapshot.last_quote?.ask_price,
-      snapshot.last_quote?.mid,
-      snapshot.last_quote?.midpoint
-    );
-  }
-
-  for (const candidate of candidates) {
-    const parsed = parseNumber(candidate);
-    if (parsed !== null) {
-      return parsed;
-    }
-  }
-
-  return null;
-};
-
-const pickUnderlyingFromRow = (row: MassiveOptionRow): number | null => {
-  return (
-    pickUnderlyingPrice(row.underlying_asset) ??
-    pickUnderlyingPrice(row.day ?? null)
-  );
 };
 
 const firstNumber = (values: Array<unknown>) => {
@@ -142,6 +110,59 @@ const ensureApiKey = (url: URL, apiKey: string) => {
   }
 };
 
+/**
+ * Extracts a reliable spot price from a Massive.com quote response.
+ * It prioritizes the last trade price, then the daily close, and finally
+ * falls back to the previous day's close. This provides a robust value
+ * whether the market is open or closed.
+ * @param quote The quote response from the Massive API.
+ * @returns A numeric spot price or null if none could be determined.
+ */
+const getUnderlyingSpotFromQuote = (quote: MassiveQuoteResponse): number | null => {
+  const quoteTicker = quote?.ticker;
+  if (!quoteTicker) {
+    return null;
+  }
+
+  const candidates = [
+    // 1. Most recent trade price (best for live market)
+    quoteTicker.lastTrade?.p,
+    // 2. Today's closing price
+    quoteTicker.day?.c,
+    // 3. Previous day's closing price (fallback for after-hours/pre-market)
+    quoteTicker.prevDay?.c,
+  ];
+
+  for (const candidate of candidates) {
+    const price = parseNumber(candidate);
+    if (price !== null && price > 0) {
+      return price;
+    }
+  }
+
+  return null;
+};
+
+async function fetchUnderlyingQuote(ticker: string, apiKey: string): Promise<number | null> {
+  const url = new URL(`${MASSIVE_BASE_URL}/stocks/${encodeURIComponent(ticker)}`);
+  ensureApiKey(url, apiKey);
+
+  const response = await fetch(url.toString(), {
+    headers: { Accept: "application/json", Authorization: `Bearer ${apiKey}` },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`[api/options] Failed to fetch underlying quote for ${ticker}: ${response.status} ${errorText}`);
+    // We can choose to throw or return null. Returning null lets the main function decide how to fail.
+    return null;
+  }
+
+  const json = (await response.json()) as MassiveQuoteResponse;
+  return getUnderlyingSpotFromQuote(json);
+}
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const rawTicker = searchParams.get("ticker");
@@ -158,83 +179,49 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ message: "MASSIVE_API_KEY is not configured" }, { status: 500 });
   }
 
-  console.log(`[api/options] Fetching Massive snapshot for ${ticker}`);
+  console.log(`[api/options] Fetching data for ${ticker}`);
 
-  let nextUrl: URL | null = new URL(`${MASSIVE_BASE}${encodeURIComponent(ticker)}`);
+  // --- Step 1: Fetch the true underlying spot price ---
+  const underlyingSpot = await fetchUnderlyingQuote(ticker, apiKey);
+  if (underlyingSpot === null) {
+    return NextResponse.json(
+      { message: `Could not retrieve underlying stock quote for ${ticker}. The symbol may be invalid.` },
+      { status: 404 }
+    );
+  }
+  console.log(`[api/options] Fetched underlying spot price: ${underlyingSpot}`);
+
+  // --- Step 2: Fetch the options chain ---
+  let nextUrl: URL | null = new URL(`${MASSIVE_BASE_URL}/options/${encodeURIComponent(ticker)}`);
   nextUrl.searchParams.set("limit", "250");
   nextUrl.searchParams.set("contract_type", "call");
   ensureApiKey(nextUrl, apiKey);
 
   const rows: MassiveOptionRow[] = [];
-  let underlyingPrice: number | null = null;
-
-  const authHeaders = {
-    Accept: "application/json",
-    Authorization: `Bearer ${apiKey}`
-  } as const;
+  const authHeaders = { Accept: "application/json", Authorization: `Bearer ${apiKey}` } as const;
 
   for (let page = 0; page < MAX_PAGES && nextUrl; page += 1) {
-    console.log(`[api/options] Page ${page + 1}: ${nextUrl}`);
-    const response = await fetch(nextUrl.toString(), {
-      headers: authHeaders,
-      cache: "no-store"
-    });
+    console.log(`[api/options] Fetching options page ${page + 1}: ${nextUrl}`);
+    const response = await fetch(nextUrl.toString(), { headers: authHeaders, cache: "no-store" });
 
     if (!response.ok) {
       const text = await response.text();
-      console.error(
-        `[api/options] Massive responded with ${response.status} on page ${page + 1}: ${text}`
-      );
+      console.error(`[api/options] Massive options API responded with ${response.status}: ${text}`);
       return NextResponse.json(
-        {
-          message: "Failed to fetch Massive snapshot",
-          statusCode: response.status,
-          details: text
-        },
+        { message: "Failed to fetch options chain snapshot", statusCode: response.status, details: text },
         { status: 502 }
       );
     }
 
-    const json = (await response.json()) as MassiveResponse;
-    if (underlyingPrice === null) {
-      const snapshotCandidate = pickUnderlyingPrice(json.underlying_asset);
-      if (snapshotCandidate !== null) {
-        underlyingPrice = snapshotCandidate;
-        console.log(`[api/options] Underlying snapshot price detected: ${underlyingPrice}`);
-      }
-    }
+    const json = (await response.json()) as MassiveOptionsResponse;
+    const pageRows = Array.isArray(json.results) ? json.results.filter(r => r.details?.contract_type?.toLowerCase() === 'call') : [];
+    rows.push(...pageRows);
 
-    const pageRows = Array.isArray(json.results) ? json.results : [];
-    pageRows.forEach((row) => {
-      const isCall = row.details?.contract_type?.toLowerCase() === "call";
-      if (!isCall) {
-        return;
-      }
-      if (underlyingPrice === null) {
-        const candidate = pickUnderlyingFromRow(row);
-        if (candidate !== null) {
-          underlyingPrice = candidate;
-          console.log(`[api/options] Underlying price derived from row: ${underlyingPrice}`);
-        }
-      }
-      rows.push(row);
-    });
-    console.log(
-      `[api/options] Page ${page + 1} yielded ${pageRows.length} rows (total so far: ${rows.length})`
-    );
-
-    if (json.next_url) {
-      try {
-        nextUrl = new URL(json.next_url);
-        ensureApiKey(nextUrl, apiKey);
-      } catch (err) {
-        nextUrl = null;
-      }
-    } else {
-      nextUrl = null;
-    }
+    nextUrl = json.next_url ? new URL(json.next_url) : null;
+    if (nextUrl) ensureApiKey(nextUrl, apiKey);
   }
 
+  // --- Step 3: Process and enrich the options data ---
   const today = new Date().toISOString().slice(0, 10);
   const expirationCandidates: string[] = rows.flatMap((row) => {
     const expiration = row.details?.expiration_date;
@@ -252,7 +239,8 @@ export async function GET(request: NextRequest) {
   );
 
   const options: OptionPoint[] = [];
-  const spotForIntrinsic = underlyingPrice ?? 0;
+  // CRITICAL FIX: Use the accurate underlyingSpot for all calculations.
+  const spotForIntrinsic = underlyingSpot;
 
   selected.forEach((row) => {
     const strike = parseNumber(row.details?.strike_price);
@@ -291,11 +279,12 @@ export async function GET(request: NextRequest) {
       premium = breakEvenFromApi - strike;
     }
 
-    if (premium === null || !Number.isFinite(premium)) {
-      return;
+    if (premium === null || !Number.isFinite(premium) || premium < 0) {
+      return; // Skip options with no valid premium
     }
 
     const breakEven = breakEvenFromApi ?? strike + premium;
+    // CRITICAL FIX: Intrinsic value is now calculated with the correct spot price.
     const intrinsic = Math.max(spotForIntrinsic - strike, 0);
     const extrinsic = Math.max(premium - intrinsic, 0);
 
@@ -313,13 +302,13 @@ export async function GET(request: NextRequest) {
   });
 
   const payload: OptionsApiResponse = {
-    underlyingPrice,
+    underlyingSpot, // Use the new field name for clarity
     expirations: validExpirations,
     options
   };
 
   console.log(
-    `[api/options] Returning ${payload.options.length} options across ${payload.expirations.length} expirations`
+    `[api/options] Returning ${payload.options.length} options across ${payload.expirations.length} expirations for ${ticker}`
   );
 
   return NextResponse.json(payload);
