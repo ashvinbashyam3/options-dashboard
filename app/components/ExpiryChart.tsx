@@ -35,7 +35,8 @@ function CustomTooltip({ active, payload }: TooltipProps<number, string>) {
     `Extrinsic: ${currency(datum.extrinsic)}`,
     `Break-even: ${currency(datum.breakEven)}`,
     `2× target: ${currency(datum.target2x)}`,
-    `3× target: ${currency(datum.target3x)}`
+    `3× target: ${currency(datum.target3x)}`,
+    `4× target: ${currency(datum.target4x)}`
   ];
 
   return (
@@ -213,6 +214,15 @@ export default function ExpiryChart({
                 dot={false}
                 activeDot={{ r: 5 }}
               />
+              <Line
+                yAxisId="right"
+                type="monotone"
+                dataKey="target4x"
+                stroke="#ff69b4"
+                name="4× target"
+                dot={false}
+                activeDot={{ r: 5 }}
+              />
               {typeof underlyingSpot === "number" && Number.isFinite(underlyingSpot) && (
                 <ReferenceLine
                   x={underlyingSpot}
@@ -233,7 +243,7 @@ export default function ExpiryChart({
         </div>
       )}
       <p style={{ color: "#7e8ca5", fontSize: 12, margin: 0 }}>
-        Bars = option value now (intrinsic + extrinsic). Lines = underlying price levels at expiry (break-even, 2×, 3×).
+        Bars = option value now (intrinsic + extrinsic). Lines = underlying price levels at expiry (break-even, 2×, 3×, 4×).
       </p>
     </div>
   );

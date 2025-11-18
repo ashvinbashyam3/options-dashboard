@@ -126,7 +126,7 @@ export default function HomePage() {
     >
       <div style={{ maxWidth: 1200, margin: "0 auto", display: "flex", flexDirection: "column", gap: 24 }}>
         <header style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <h1 style={{ margin: 0, fontSize: 32 }}>Options Payoff Map (Next 10 Expiries)</h1>
+          <h1 style={{ margin: 0, fontSize: 32 }}>Options Payoff Map (Next 20 Expiries)</h1>
           <p style={{ margin: 0, color: "#9ba5c4", maxWidth: 780 }}>
             Visualize call pricing, intrinsic vs extrinsic value, break-even levels, and 2×/3× underlying targets.
             Data sourced from Massive snapshot API.
