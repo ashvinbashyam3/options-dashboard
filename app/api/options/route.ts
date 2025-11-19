@@ -231,7 +231,7 @@ export async function GET(request: NextRequest) {
     new Set(expirationCandidates.filter((date) => date >= today))
   )
     .sort()
-    .slice(0, 10);
+    .slice(0, 20);
 
   const selected = rows.filter((row) =>
     row.details?.expiration_date && validExpirations.includes(row.details.expiration_date)
@@ -296,7 +296,8 @@ export async function GET(request: NextRequest) {
       extrinsic,
       breakEven,
       target2x: strike + 2 * premium,
-      target3x: strike + 3 * premium
+      target3x: strike + 3 * premium,
+      target4x: strike + 4 * premium
     });
   });
 

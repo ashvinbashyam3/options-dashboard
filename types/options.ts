@@ -8,6 +8,7 @@ export type OptionPoint = {
   breakEven: number;
   target2x: number;
   target3x: number;
+  target4x: number;
 };
 
 export type OptionsApiResponse = {
